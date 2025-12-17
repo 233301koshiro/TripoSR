@@ -9,20 +9,34 @@ def glb_to_pointcloud_and_obj(glb_path, export_obj_path, npy_path):
     if isinstance(mesh, trimesh.Scene):
         # scene.dump(concatenate=True) を使うと一発で結合してくれます
         mesh = mesh.dump(concatenate=True)
-
+    # =========================================================================
+    # ★今回だけ特別：ロボットが「手」に見える問題の修正パッチ
+    # =========================================================================
+    print("--- [SPECIAL FIX] Applying Rotation (Z-up to Y-up) ---")
+    
+    # X軸を中心に -90度 回転させる行列を作成
+    # これで「寝ている(Z-up)」ロボットを「立たせる(Y-up)」ことができます
+    matrix = trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0])
+    
+    # メッシュ全体に回転を適用
+    mesh.apply_transform(matrix)
+    
+    # ついでに位置も原点に合わせておきます（視界外へ飛ぶのを防ぐため）
+    mesh.apply_translation(-mesh.centroid)
+    print("--- [SPECIAL FIX] Rotation & Centering Done ---")
     # 2. ここでChoreonoid確認用のOBJを書き出してしまう
     mesh.export(export_obj_path)
     print(f"Choreonoid用OBJを保存しました: {export_obj_path}")
 
     # --- 以下、さっきと同じ点群処理 ---
-    points, face_indices = trimesh.sample.sample_surface(mesh, 4096)
+    points, face_indices = trimesh.sample.sample_surface(mesh, 8192)
     
     # 色情報の取得 (GLBはvisual.vertex_colorsなどに入ることが多い)
     # 簡易的に色を取得
     if hasattr(mesh.visual, 'to_color'):
         mesh.visual = mesh.visual.to_color()
-    
-    colors = np.zeros((4096, 3))
+
+    colors = np.zeros((8192, 3))
     if hasattr(mesh.visual, 'face_colors'):
          colors = mesh.visual.face_colors[face_indices][:, :3]
     
@@ -40,6 +54,8 @@ def glb_to_pointcloud_and_obj(glb_path, export_obj_path, npy_path):
 
 # 実行
 glb_to_pointcloud_and_obj("./output/gemini/gemini_robot.glb", "./output/gemini/check_me.obj", "./output/gemini/output.npy")
+
+'''
 import numpy as np
 import trimesh
 
@@ -90,3 +106,4 @@ mesh.export(output_obj_path, include_normals=True)
 print(f"修正完了: {output_obj_path}")
 print(f"- 位置: 原点(0,0,0)に移動済み")
 print(f"- サイズ: 100倍")
+'''

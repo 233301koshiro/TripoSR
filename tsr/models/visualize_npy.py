@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # ファイルパスを指定
-file_path = "./output/gemini/output.npy"  # ←ここを自分のファイルに変える
+file_path = "./output/gemini/gemini_robot_normal_mesh_points.npy"  # ←ここを自分のファイルに変える
 
 try:
     data = np.load(file_path)

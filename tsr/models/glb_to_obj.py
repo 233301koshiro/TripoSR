@@ -7,52 +7,55 @@ def glb_to_pointcloud_and_obj_mesh_points(glb_path, export_obj_path, npy_path):
     if isinstance(mesh, trimesh.Scene):
         mesh = mesh.dump(concatenate=True)
 
-    # --- [SPECIAL FIX 1] 回転補正 (仰向け対策) ---
+    # --- [Fix 1] 回転補正 ---
     print("--- Rotation Fixing ---")
-    # ロボットの座標系に合わせて調整（前回うまくいった角度を採用してください）
-    # 仰向けなら np.pi/2, うつ伏せなら -np.pi/2, 横向きならY軸回転などを試す
     matrix = trimesh.transformations.rotation_matrix(np.pi/2, [1, 0, 0]) 
     mesh.apply_transform(matrix)
-    mesh.apply_translation(-mesh.centroid)
     
-    # 確認用OBJ保存
+    # --- [Fix 2] 原点合わせ ---
+    mesh.apply_translation(-mesh.centroid)
+
+    # =========================================================
+    # ★追加ここだけ: 正規化 (Normalization)
+    # これを追加しないと、サイズが巨大すぎて認識に失敗します
+    # =========================================================
+    max_dist = np.max(np.linalg.norm(mesh.vertices, axis=1))
+    if max_dist > 0:
+        scale = 1.0 / max_dist
+        mesh.apply_scale(scale)
+        print(f"Applied Scaling: {scale:.4f} (Original Size: {max_dist:.4f})")
+    # =========================================================
+    
+    # 確認用OBJ保存 (正規化された状態で保存されます)
     mesh.export(export_obj_path)
     print(f"Saved OBJ: {export_obj_path}")
 
-    # --- [SPECIAL FIX 2] 「ハイブリッド・サンプリング」 ---
-    # 面積ベースだけでなく、形状の角（頂点）も混ぜて、細い足が消えるのを防ぐ
-    
+    # --- [Fix 3] ハイブリッド・サンプリング ---
     target_count = 8192
     
-    # A. 表面からランダムサンプリング (全体の7割くらい)
+    # A. 表面からランダムサンプリング
     count_surface = int(target_count * 0.7)
     points_surface, _ = trimesh.sample.sample_surface(mesh, count_surface)
     
-    # B. メッシュの頂点をそのまま使う (全体の3割くらい)
-    # 頂点は「足先」「関節」など重要な場所にあることが多い
+    # B. メッシュの頂点を混ぜる
     verts = mesh.vertices
     if len(verts) > 0:
-        # 頂点数が足りなければ繰り返し使う、多ければランダムに間引く
-        indices = np.random.choice(len(verts), target_count - count_surface, replace=(len(verts) < (target_count - count_surface)))
+        replace = len(verts) < (target_count - count_surface)
+        indices = np.random.choice(len(verts), target_count - count_surface, replace=replace)
         points_verts = verts[indices]
     else:
         points_verts = np.empty((0, 3))
 
-    # AとBを合体！
+    # AとBを合体
     points = np.vstack((points_surface, points_verts))
     
-    # 色情報の取得（頂点カラーベースで簡易取得）
-    # ※厳密にやるなら頂点インデックス追跡が必要ですが、今回は簡易的に最近傍法で色を取るか、
-    #  もしくは一律グレーにして「形」だけで勝負させます（色誤認を防ぐため推奨）
-    
-    # 今回は「形」を認識させたいので、あえて色は「白」で統一してみます
-    # （変なテクスチャ色が邪魔している可能性もあるため）
-    colors = np.ones((len(points), 3), dtype=np.float32) # 全て白 (1.0, 1.0, 1.0)
+    # 色情報の取得 (白固定)
+    colors = np.ones((len(points), 3), dtype=np.float32) 
 
     # データ結合 & 保存
     point_cloud_data = np.hstack((points, colors)).astype(np.float32)
     np.save(npy_path, point_cloud_data)
-    print(f"Saved NPY with Hybrid Sampling: {npy_path}")
+    print(f"Saved NPY: {npy_path}")
 
 def glb_to_pointcloud_and_obj_random_points(glb_path, export_obj_path, npy_path):
     # 1. GLBを読み込む (trimeshはGLB対応)
